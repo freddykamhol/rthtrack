@@ -147,7 +147,7 @@ function App() {
       oscillator.connect(gain); gain.connect(context.destination); oscillator.start(); oscillator.stop(context.currentTime + 0.16)
     }
     if (notificationRegistration.current && Notification.permission === 'granted') {
-      void notificationRegistration.current.showNotification('RTHtrack', { body: events.map((event) => event.title).slice(0, 4).join('\n'), tag: 'rthtrack-live', silent: muted }).catch(() => setNotificationMessage('Systemmeldung nicht zustellbar. Meldungen stehen in der Liste.'))
+      void notificationRegistration.current.showNotification('ChrisTRACK', { body: events.map((event) => event.title).slice(0, 4).join('\n'), tag: 'christrack-live', silent: muted }).catch(() => setNotificationMessage('Systemmeldung nicht zustellbar. Meldungen stehen in der Liste.'))
     }
   })
   useEffect(() => {

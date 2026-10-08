@@ -80,9 +80,9 @@ export function createApp({ dataDir = process.env.RTHTRACK_DATA_DIR || path.join
       if (!['GET', 'HEAD'].includes(req.method)) return json(res, 405, { error: 'Methode nicht erlaubt' })
       const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1)
       // Only public build assets are served, never source/config/profile data.
-      if (name !== 'index.html' && name !== 'notification-sw.js' && !/^assets\/[a-zA-Z0-9_.-]+$/.test(name)) return json(res, 404, { error: 'Nicht gefunden' })
+      if (name !== 'index.html' && name !== 'notification-sw.js' && name !== 'manifest.webmanifest' && !/^assets\/[a-zA-Z0-9_.-]+$/.test(name) && !/^icons\/[a-zA-Z0-9_.-]+$/.test(name)) return json(res, 404, { error: 'Nicht gefunden' })
       const body = await readFile(path.join(root, name))
-      const ext = path.extname(name); const mime = { '.html':'text/html', '.js':'application/javascript', '.css':'text/css', '.png':'image/png', '.svg':'image/svg+xml' }[ext] || 'application/octet-stream'
+      const ext = path.extname(name); const mime = { '.html':'text/html', '.js':'application/javascript', '.css':'text/css', '.png':'image/png', '.svg':'image/svg+xml', '.webmanifest':'application/manifest+json' }[ext] || 'application/octet-stream'
       res.writeHead(200, { 'Content-Type': mime + (['.html','.js','.css'].includes(ext) ? '; charset=utf-8' : ''), 'Cache-Control': ext === '.html' || name === 'notification-sw.js' ? 'no-cache' : 'public, max-age=31536000, immutable', 'X-Content-Type-Options':'nosniff' }); res.end(req.method === 'HEAD' ? undefined : body)
     } catch (error) { console.error('RTHtrack request:', error.message); if (!res.headersSent) json(res, error.code === 'ENOENT' ? 404 : 503, { error: 'Server-Dienst momentan nicht verfügbar' }); else res.end() }
   })
