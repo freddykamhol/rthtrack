@@ -203,7 +203,54 @@ function App() {
     container.addEventListener('pointerdown', down); container.addEventListener('pointermove', move); container.addEventListener('pointerup', cancel); container.addEventListener('pointercancel', cancel); container.addEventListener('click', click, true)
     return () => { cancel(); map.off('contextmenu', menu); map.off('movestart', cancel); container.removeEventListener('pointerdown', down); container.removeEventListener('pointermove', move); container.removeEventListener('pointerup', cancel); container.removeEventListener('pointercancel', cancel); container.removeEventListener('click', click, true) }
   }, [])
-  useEffect(() => { const map = leafletMap.current; const districtLayer = districtLayerRef.current; if (!map || !districtLayer) return; let active = true; fetch(districtGeoJsonUrl).then((response) => response.json()).then((geojson) => { if (!active) return; setDistrictNames([...new Set<string>((geojson.features || []).map((feature: { properties?: { NAME_3?: string } }) => feature.properties?.NAME_3).filter((name: string | undefined): name is string => Boolean(name)))].sort((a, b) => a.localeCompare(b, 'de'))); const adjacency = districtAdjacency(geojson); const neighborDistricts = new Set([...activeDistricts].flatMap((name) => [...(adjacency.get(name) || [])])); const layer = L.geoJSON(geojson, { pane: 'districts', style: (feature) => { const name = feature?.properties?.NAME_3 || ''; const selected = activeDistricts.has(name); const neighbor = neighborDistricts.has(name); return { color: selected ? '#81f0b0' : neighbor ? '#c4a6ff' : '#9fb0aa', weight: selected ? 2 : neighbor ? 1.3 : 0.45, opacity: selected || neighbor ? 0.9 : 0.22, fillColor: selected ? '#48d987' : '#9b83ff', fillOpacity: selected ? 0.26 : neighbor ? 0.12 : 0 }; }, onEachFeature: (feature, featureLayer) => { const name = feature.properties?.NAME_3; if (activeDistricts.has(name) || neighborDistricts.has(name)) featureLayer.bindTooltip(name, { sticky: true, className: activeDistricts.has(name) ? 'district-tooltip active' : 'district-tooltip neighbor' }); } }); districtLayer.addLayer(layer); }).catch(() => undefined); return () => { active = false; districtLayer.clearLayers() } }, [activeDistricts])
+  useEffect(() => {
+    const map = leafletMap.current
+    const districtLayer = districtLayerRef.current
+    if (!map || !districtLayer) return
+    let active = true
+    let refreshStyle: (() => void) | undefined
+    const controller = new AbortController()
+    fetch(districtGeoJsonUrl, { signal: controller.signal }).then((response) => response.json()).then((geojson) => {
+      if (!active) return
+      setDistrictNames([...new Set<string>((geojson.features || []).map((feature: { properties?: { NAME_3?: string } }) => feature.properties?.NAME_3).filter((name: string | undefined): name is string => Boolean(name)))].sort((a, b) => a.localeCompare(b, 'de')))
+      const adjacency = districtAdjacency(geojson)
+      const neighborDistricts = new Set([...activeDistricts].flatMap((name) => [...(adjacency.get(name) || [])]))
+      const style: L.StyleFunction = (feature) => {
+        const name = feature?.properties?.NAME_3 || ''
+        const selected = activeDistricts.has(name)
+        const neighbor = neighborDistricts.has(name)
+        const zoom = map.getZoom()
+        // Preserve overview contrast; reduce fill in five steps to 5% at zoom 16+.
+        const level = zoom >= 16 ? 4 : zoom >= 14 ? 3 : zoom >= 12 ? 2 : zoom >= 10 ? 1 : 0
+        const selectedOpacity = [0.26, 0.20, 0.14, 0.09, 0.05][level]
+        const neighborOpacity = [0.12, 0.10, 0.08, 0.06, 0.05][level]
+        return {
+          color: selected ? '#81f0b0' : neighbor ? '#c4a6ff' : '#9fb0aa',
+          weight: selected ? 2 : neighbor ? 1.3 : 0.45,
+          opacity: selected || neighbor ? 0.9 : 0.22,
+          fillColor: selected ? '#48d987' : '#9b83ff',
+          fillOpacity: selected ? selectedOpacity : neighbor ? neighborOpacity : 0,
+        }
+      }
+      const layer = L.geoJSON(geojson, {
+        pane: 'districts',
+        style,
+        onEachFeature: (feature, featureLayer) => {
+          const name = feature.properties?.NAME_3
+          if (activeDistricts.has(name) || neighborDistricts.has(name)) featureLayer.bindTooltip(name, { sticky: true, className: activeDistricts.has(name) ? 'district-tooltip active' : 'district-tooltip neighbor' })
+        },
+      })
+      districtLayer.addLayer(layer)
+      refreshStyle = () => { layer.setStyle(style) }
+      map.on('zoomend', refreshStyle)
+    }).catch(() => undefined)
+    return () => {
+      active = false
+      controller.abort()
+      if (refreshStyle) map.off('zoomend', refreshStyle)
+      districtLayer.clearLayers()
+    }
+  }, [activeDistricts])
   useEffect(() => { const group = layersRef.current; if (!group) return; group.clearLayers(); if (showFlights) filteredFlights.forEach((flight) => { const markerHtml = `<div class="radar-marker ${flight.type === 'HELI' ? 'is-other-heli' : ''} ${selectedFlight?.id === flight.id ? 'is-selected' : ''}" style="--marker:${flight.accent}"><div class="radar-square"></div><div class="radar-leader"></div><div class="radar-label"><strong>${escapeHtml(flight.callSign)}</strong><span>${flight.type}</span><span>${escapeHtml(flight.model)}</span></div></div>`; const marker = L.marker(flight.coords, { icon: L.divIcon({ className: 'flight-icon', html: markerHtml, iconSize: flight.type === 'HELI' ? [18, 18] : [270, 80], iconAnchor: flight.type === 'HELI' ? [9, 9] : [12, 68] }) }).addTo(group); marker.on('click', () => { setSelectedFlight(flight); setPanelOpen(true) }) }); if (showPads) pads.filter((pad) => pad.active).forEach((pad) => { const marker = L.marker(pad.coords, { icon: L.divIcon({ className: 'pad-icon category-pad', html: `<div style="--pad-color:${padStyles[pad.category].color}">${padIconSvg(pad.category)}</div>`, iconSize: [34, 34], iconAnchor: [17, 17] }) }).bindTooltip(`${escapeHtml(pad.name)} · ${escapeHtml(pad.category)}`, { direction: 'top', offset: [0, -16] }).addTo(group); marker.on('click', () => { setSelectedPad(pad); setMapMenu(null) }) }) }, [filteredFlights, selectedFlight, showFlights, showPads, pads])
   useEffect(() => {
     const map = leafletMap.current
