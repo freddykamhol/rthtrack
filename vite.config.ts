@@ -1,10 +1,11 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
+import { readFileSync } from 'node:fs'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
-  base: process.env.GITHUB_ACTIONS ? '/rthtrack/' : '/',
+  plugins: [react(), { name: 'development-entry', apply: 'serve', transformIndexHtml: { order: 'pre', handler: () => readFileSync('client/index.html', 'utf8') } }],
+  base: './',
   server: {
     proxy: {
       '/adsb-live': {
