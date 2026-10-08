@@ -1,0 +1,100 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import './App.css'
+
+type Flight = { id: string; callSign: string; type: 'RTH' | 'ITH' | 'HELI'; model: string; operator: string; status: 'Im Flug' | 'Am Boden'; altitude: string; speed: string; location: string; accent: string; coords: [number, number]; live: boolean }
+type AdsbAircraft = { hex: string; flight?: string; registration?: string; r?: string; t?: string; category?: string; lat?: number; lon?: number; alt_baro?: number | string; gs?: number; lastPosition?: { lat?: number; lon?: number } }
+
+const pads: [string, [number, number]][] = [['Helios Klinikum Uelzen', [52.965, 10.56]], ['Klinikum Lueneburg', [53.25, 10.41]], ['Sportplatz Amelinghausen', [53.13, 10.21]]]
+const districtGeoJsonUrl = 'https://raw.githubusercontent.com/isellsoap/deutschlandGeoJSON/main/4_kreise/3_mittel.geo.json'
+
+function geometryRings(value: unknown): number[][][] {
+  if (!Array.isArray(value) || value.length === 0) return []
+  if (Array.isArray(value[0]) && typeof value[0][0] === 'number') return [value as number[][]]
+  return value.flatMap((child) => geometryRings(child))
+}
+function districtAdjacency(geojson: { features?: Array<{ properties?: { NAME_3?: string }; geometry?: { coordinates?: unknown } }> }) {
+  const owners = new Map<string, Set<string>>()
+  geojson.features?.forEach((feature) => {
+    const name = feature.properties?.NAME_3
+    if (!name) return
+    geometryRings(feature.geometry?.coordinates).forEach((ring) => ring.forEach((point, index) => {
+      const next = ring[(index + 1) % ring.length]
+      const a = `${point[0].toFixed(5)},${point[1].toFixed(5)}`; const b = `${next[0].toFixed(5)},${next[1].toFixed(5)}`
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`
+      if (!owners.has(key)) owners.set(key, new Set()); owners.get(key)?.add(name)
+    }))
+  })
+  const adjacency = new Map<string, Set<string>>()
+  owners.forEach((names) => { const list = [...names]; list.forEach((name) => { if (!adjacency.has(name)) adjacency.set(name, new Set()); list.filter((other) => other !== name).forEach((other) => adjacency.get(name)?.add(other)) }) })
+  return adjacency
+}
+
+type RescueRegistryEntry = { callsign: string; displayName: string; type: 'RTH' | 'ITH'; operator: string; registrations: string[] }
+const germanRescueRegistry: { source: string; callsignPrefixes: string[]; registrations: Set<string>; entries: RescueRegistryEntry[] } = {
+  source: 'https://de.ivao.aero/special-operations/luftrettung/',
+  callsignPrefixes: ['CHX', 'CHR', 'RTH', 'ITH', 'HEMS', 'RESCUE'],
+  registrations: new Set(['D-HXFT', 'D-HLDM', 'D-HXFW']),
+  entries: [{ callsign: 'CHXE5', displayName: 'Christoph Europa 5', type: 'RTH', operator: 'DRF Luftrettung', registrations: ['D-HXFW'] }],
+}
+function findRegistryEntry(callsign: string, registration: string) {
+  return germanRescueRegistry.entries.find((entry) => entry.callsign === callsign.toUpperCase() || entry.registrations.includes(registration))
+}
+function isRegisteredGermanRescue(callsign: string, registration: string) {
+  return Boolean(findRegistryEntry(callsign, registration)) || germanRescueRegistry.callsignPrefixes.some((prefix) => callsign.toUpperCase().startsWith(prefix)) || germanRescueRegistry.registrations.has(registration)
+}
+function fromAdsb(aircraft: AdsbAircraft): Flight | null {
+  const callsign = aircraft.flight?.trim() || ''
+  const registration = (aircraft.r || aircraft.registration || '').trim().toUpperCase()
+  const helicopter = aircraft.category === 'A7' || /^(EC|AS|BK|H|R22|R44)/i.test(aircraft.t || '')
+  const latitude = aircraft.lat ?? aircraft.lastPosition?.lat
+  const longitude = aircraft.lon ?? aircraft.lastPosition?.lon
+  if ((!callsign && !registration) || !helicopter || latitude == null || longitude == null) return null
+  const registryEntry = findRegistryEntry(callsign, registration)
+  const isRegisteredRescue = isRegisteredGermanRescue(callsign, registration)
+  const isIth = registryEntry?.type === 'ITH' || /ITH|Hansa/i.test(callsign)
+  const classifiedType = registryEntry?.type || (isRegisteredRescue ? (isIth ? 'ITH' : 'RTH') : 'HELI')
+  const operator = registryEntry?.operator || (/ADAC/i.test(callsign) ? 'ADAC Luftrettung' : /DRF/i.test(callsign) ? 'DRF Luftrettung' : 'Luftrettung / ADS-B')
+  const altitude = typeof aircraft.alt_baro === 'number' ? `${aircraft.alt_baro.toLocaleString('de-DE')} ft` : '--'
+  return { id: aircraft.hex, callSign: registryEntry?.displayName || callsign || registration, type: classifiedType, model: aircraft.t || 'Helikopter', operator, status: 'Im Flug', altitude, speed: aircraft.gs == null ? '--' : `${Math.round(aircraft.gs * 1.852)} km/h`, location: 'Live-Position im Einsatzraum', accent: classifiedType === 'ITH' ? '#9b83ff' : classifiedType === 'RTH' ? '#ff6b4a' : '#56b6ff', coords: [latitude, longitude], live: true }
+}
+
+async function fetchLiveFlights(signal: AbortSignal) {
+  // The flight feed is intentionally wider than the active district layer:
+  // aircraft outside the user's own counties should remain visible too.
+  const urls = ['/adsb-live']
+  const payloads = (await Promise.all(urls.map(async (url) => { try { const response = await fetch(url, { signal }); return response.ok ? await response.json() as { ac?: AdsbAircraft[] } : null } catch { return null } }))).filter((payload): payload is { ac?: AdsbAircraft[] } => payload !== null)
+  if (!payloads.length) throw new Error('ADSB feed unavailable')
+  const unique = new Map<string, AdsbAircraft>()
+  payloads.flatMap((payload) => payload.ac || []).forEach((aircraft) => unique.set(aircraft.hex, aircraft))
+  return [...unique.values()].map(fromAdsb).filter((flight): flight is Flight => flight !== null)
+}
+
+function Logo() { return <div className="logo"><span className="logo-mark">✦</span><span>RTH<span>track</span></span></div> }
+function Icon({ children }: { children: React.ReactNode }) { return <span className="icon" aria-hidden="true">{children}</span> }
+function escapeHtml(value: string) { return value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] || character) }
+
+function App() {
+  const mapRef = useRef<HTMLDivElement>(null); const leafletMap = useRef<L.Map | null>(null); const layersRef = useRef<L.LayerGroup | null>(null); const districtLayerRef = useRef<L.LayerGroup | null>(null)
+  const [flights, setFlights] = useState<Flight[]>([]); const [dataMode, setDataMode] = useState<'live' | 'offline'>('offline'); const [selectedFlight, setSelectedFlight] = useState<Flight | null>(null); const [showFlights, setShowFlights] = useState(true); const [showPads, setShowPads] = useState(true); const [showOtherHelis, setShowOtherHelis] = useState(false); const [search, setSearch] = useState(''); const [panelOpen, setPanelOpen] = useState(true); const [muted, setMuted] = useState(false); const [showSettings, setShowSettings] = useState(false); const [showNotifications, setShowNotifications] = useState(false); const [notificationsEnabled, setNotificationsEnabled] = useState(true); const [districts, setDistricts] = useState(['Uelzen', 'Lüneburg', 'Harburg']); const [districtInput, setDistrictInput] = useState('')
+  const activeDistricts = useMemo(() => new Set(districts), [districts])
+  const addDistrict = () => { const value = districtInput.trim(); if (value && !districts.includes(value) && districts.length < 3) { setDistricts([...districts, value]); setDistrictInput('') } }
+  const filteredFlights = useMemo(() => flights.filter((flight) => (showOtherHelis || flight.type !== 'HELI') && (flight.callSign.toLowerCase().includes(search.toLowerCase()) || flight.location.toLowerCase().includes(search.toLowerCase()))), [flights, search, showOtherHelis])
+
+  useEffect(() => { let active = true; const controller = new AbortController(); const load = async () => { try { const next = await fetchLiveFlights(controller.signal); if (active) { setFlights(next); setDataMode(next.length ? 'live' : 'offline'); setSelectedFlight((current) => next.find((item) => item.id === current?.id) || next[0] || null) } } catch { if (active) { setFlights([]); setSelectedFlight(null); setDataMode('offline') } } }; load(); const timer = window.setInterval(load, 30000); return () => { active = false; controller.abort(); window.clearInterval(timer) } }, [])
+  useEffect(() => { if (!mapRef.current || leafletMap.current) return; const map = L.map(mapRef.current, { zoomControl: false, attributionControl: false, minZoom: 8, maxZoom: 15 }).setView([53.18, 10.38], 10); map.createPane('districts'); const pane = map.getPane('districts'); if (pane) pane.style.zIndex = '350'; const cartoKey = import.meta.env.VITE_CARTO_API_KEY; L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${cartoKey}`, { maxZoom: 20 }).addTo(map); L.control.attribution({ prefix: false, position: 'bottomright' }).addAttribution('OSM contributors · CARTO').addTo(map); leafletMap.current = map; districtLayerRef.current = L.layerGroup().addTo(map); layersRef.current = L.layerGroup().addTo(map); return () => { map.remove(); leafletMap.current = null } }, [])
+  useEffect(() => { const map = leafletMap.current; const districtLayer = districtLayerRef.current; if (!map || !districtLayer) return; let active = true; fetch(districtGeoJsonUrl).then((response) => response.json()).then((geojson) => { if (!active) return; const adjacency = districtAdjacency(geojson); const neighborDistricts = new Set([...activeDistricts].flatMap((name) => [...(adjacency.get(name) || [])])); const layer = L.geoJSON(geojson, { pane: 'districts', style: (feature) => { const name = feature?.properties?.NAME_3 || ''; const selected = activeDistricts.has(name); const neighbor = neighborDistricts.has(name); return { color: selected ? '#81f0b0' : neighbor ? '#c4a6ff' : '#9fb0aa', weight: selected ? 2 : neighbor ? 1.3 : 0.45, opacity: selected || neighbor ? 0.9 : 0.22, fillColor: selected ? '#48d987' : '#9b83ff', fillOpacity: selected ? 0.26 : neighbor ? 0.12 : 0 }; }, onEachFeature: (feature, featureLayer) => { const name = feature.properties?.NAME_3; if (activeDistricts.has(name) || neighborDistricts.has(name)) featureLayer.bindTooltip(name, { sticky: true, className: activeDistricts.has(name) ? 'district-tooltip active' : 'district-tooltip neighbor' }); } }); districtLayer.addLayer(layer); }).catch(() => undefined); return () => { active = false; districtLayer.clearLayers() } }, [activeDistricts])
+  useEffect(() => { const group = layersRef.current; if (!group) return; group.clearLayers(); if (showFlights) filteredFlights.forEach((flight) => { const markerHtml = `<div class="radar-marker ${flight.type === 'HELI' ? 'is-other-heli' : ''} ${selectedFlight?.id === flight.id ? 'is-selected' : ''}" style="--marker:${flight.accent}"><div class="radar-square"></div><div class="radar-leader"></div><div class="radar-label"><strong>${escapeHtml(flight.callSign)}</strong><span>${flight.type}</span><span>${escapeHtml(flight.model)}</span></div></div>`; const marker = L.marker(flight.coords, { icon: L.divIcon({ className: 'flight-icon', html: markerHtml, iconSize: flight.type === 'HELI' ? [18, 18] : [270, 80], iconAnchor: flight.type === 'HELI' ? [9, 9] : [12, 68] }) }).addTo(group); marker.on('click', () => { setSelectedFlight(flight); setPanelOpen(true) }) }); if (showPads) pads.forEach(([name, coords]) => L.marker(coords, { icon: L.divIcon({ className: 'pad-icon', html: '<div>⌂</div>', iconSize: [30, 30], iconAnchor: [15, 15] }) }).bindTooltip(name, { direction: 'top', offset: [0, -12] }).addTo(group)) }, [filteredFlights, selectedFlight, showFlights, showPads])
+  const locate = () => leafletMap.current?.flyTo([53.18, 10.38], 10, { duration: 0.8 }); const zoom = (delta: number) => leafletMap.current?.setZoom((leafletMap.current.getZoom() || 10) + delta)
+  return <main className="map-app"><div ref={mapRef} className="leaflet-map" />
+    <div className="top-left-stack"><div className="brand-pill"><Logo /><span className="brand-divider" /><span className="brand-context">EINSATZRAUM NORD</span></div><div className="search-box"><Icon>⌕</Icon><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Flug, Ort oder Kennung suchen" /><kbd>⌘ K</kbd></div></div>
+    <div className="top-right-stack"><div className="status-pill"><span className="pulse-dot" /> {dataMode === 'live' ? 'LIVE ADS-B' : 'KEINE LIVE-DATEN'} <span>alle 30 Sek.</span></div><div className="notification-wrap"><button className="glass-button notification" aria-label="Benachrichtigungen" onClick={() => setShowNotifications(!showNotifications)}>♧<b>3</b></button>{showNotifications && <div className="notification-popover"><div className="popover-title"><span>Benachrichtigungen</span><small>3 neu</small></div><div className="notification-item"><i className="notice-icon red">✦</i><div><strong>CHX30 im Anflug</strong><span>Live-Position vor 2 Min.</span></div></div><div className="notification-item"><i className="notice-icon purple">✦</i><div><strong>ITH im Einsatzraum</strong><span>Landkreis Lüneburg · vor 8 Min.</span></div></div><button className="popover-link" onClick={() => { setShowNotifications(false); setShowSettings(true) }}>Benachrichtigungen verwalten →</button></div>}</div><button className="glass-button settings-trigger" aria-label="Einstellungen" onClick={() => setShowSettings(true)}>⚙</button><button className="avatar" aria-label="Profil und Einstellungen" onClick={() => setShowSettings(true)}>FA</button></div>
+    <div className="map-toolbar glass-card"><button className="tool-button active" onClick={() => setShowFlights(!showFlights)}><span className="tool-symbol">✦</span><small>Fluege</small><i className={showFlights ? 'on' : ''} /></button><button className="tool-button" onClick={() => setShowPads(!showPads)}><span className="tool-symbol">⌂</span><small>Landeplaetze</small><i className={showPads ? 'on' : ''} /></button><span className="toolbar-line" /><button className="tool-button" onClick={() => setMuted(!muted)}><span className="tool-symbol">{muted ? '♢' : '◖'}</span><small>{muted ? 'Stumm' : 'Ton an'}</small></button></div>
+    <div className="map-controls glass-card"><button onClick={() => zoom(1)} aria-label="Vergroessern">＋</button><button onClick={() => zoom(-1)} aria-label="Verkleinern">−</button><span /><button onClick={locate} aria-label="Karte zentrieren">⌾</button></div>
+    <div className={`flight-sheet glass-card ${panelOpen ? 'open' : 'closed'}`}><button className="sheet-collapse" onClick={() => setPanelOpen(!panelOpen)} aria-label="Details ein- oder ausblenden">{panelOpen ? '›' : '‹'}</button>{selectedFlight ? <><div className="sheet-header"><div><span className="eyebrow"><span className="pulse-dot" /> ECHTER ADS-B FLUG</span><h1>{selectedFlight.callSign}</h1><p>{selectedFlight.operator} <span>·</span> {selectedFlight.type} / {selectedFlight.model}</p></div><div className="aircraft-icon" style={{ background: selectedFlight.accent }}>✦</div></div><div className="flight-live"><span className="live-badge">● LIVE</span><span>{selectedFlight.location}</span></div><div className="flight-metrics"><div><span>HOEHE</span><strong>{selectedFlight.altitude}</strong></div><div><span>GESCHWINDIGKEIT</span><strong>{selectedFlight.speed}</strong></div></div><button className="track-button" onClick={() => leafletMap.current?.flyTo(selectedFlight.coords, 13, { duration: 0.8 })}>Flug auf Karte verfolgen <Icon>↗</Icon></button><div className="sheet-footer"><span><span className="green-dot" /> ADS-B Position aktuell</span><span>gerade eben</span></div></> : <div className="empty-flight"><span className="empty-icon">✦</span><strong>Keine Live-Hubschrauber</strong><p>Der kostenlose ADS-B-Feed liefert gerade keine sichtbare Live-Position.</p></div>}</div>
+    {showSettings && <div className="settings-backdrop" onClick={(event) => event.target === event.currentTarget && setShowSettings(false)}><section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div className="settings-head"><div><span className="eyebrow">RTHtrack · CONTROL CENTER</span><h2 id="settings-title">Einstellungen</h2></div><button className="close-settings" onClick={() => setShowSettings(false)}>×</button></div><p className="settings-lead">Deine Karte, deine Einsatzräume, deine Warnungen.</p><div className="settings-section"><div className="settings-section-title"><div><strong>Einsatzräume</strong><span>Landkreise auf der Karte hervorheben</span></div><small>{districts.length}/3</small></div><div className="district-input-row"><input value={districtInput} onChange={(event) => setDistrictInput(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addDistrict()} placeholder="Landkreis eingeben …" disabled={districts.length >= 3} /><button onClick={addDistrict} disabled={!districtInput.trim() || districts.length >= 3}>Hinzufügen</button></div><div className="settings-chips">{districts.map((district) => <button key={district} className="chosen" onClick={() => setDistricts(districts.filter((item) => item !== district))}>{district} <span>×</span></button>)}</div><div className="settings-suggestions">{['Uelzen', 'Lüneburg', 'Harburg', 'Celle', 'Heidekreis'].filter((district) => !districts.includes(district)).map((district) => <button key={district} onClick={() => { setDistricts([...districts, district]); setDistrictInput('') }} disabled={districts.length >= 3}>+ {district}</button>)}</div></div><div className="settings-section"><div className="settings-section-title"><div><strong>Kartenebenen</strong><span>Was soll sichtbar sein?</span></div></div><label className="setting-row"><span><b>RTH / ITH</b><small>Rettungshubschrauber und Intensivtransport</small></span><input type="checkbox" checked={showFlights} onChange={() => setShowFlights(!showFlights)} /><i className="settings-switch" /></label><label className="setting-row"><span><b>Landeplätze</b><small>Klinik- und Außenlandeplätze</small></span><input type="checkbox" checked={showPads} onChange={() => setShowPads(!showPads)} /><i className="settings-switch" /></label><label className="setting-row"><span><b>Sonstige Helikopter</b><small>Zusätzliche Rotorcraft aus dem Live-Feed</small></span><input type="checkbox" checked={showOtherHelis} onChange={() => setShowOtherHelis(!showOtherHelis)} /><i className="settings-switch" /></label></div><div className="settings-section"><div className="settings-section-title"><div><strong>Benachrichtigungen</strong><span>Nur echte Live-ADS-B-Ereignisse</span></div><span className="live-state">{notificationsEnabled ? 'AKTIV' : 'STUMM'}</span></div><label className="setting-row"><span><b>Live-Warnungen</b><small>Start, Landung und Eintritt in Einsatzräume</small></span><input type="checkbox" checked={notificationsEnabled} onChange={() => setNotificationsEnabled(!notificationsEnabled)} /><i className="settings-switch" /></label></div><button className="save-settings" onClick={() => setShowSettings(false)}>Einstellungen speichern</button></section></div>}
+    <div className="bottom-status"><span className="legend"><i className="active-district-dot" /> Einsatzraum <i className="neighbor-district-dot" /> Angrenzender LK <i className="rth-dot" /> RTH <i className="ith-dot" /> ITH <i className="heli-dot" /> Sonstiger Heli <i className="pad-dot" /> Landeplatz</span><span className="coordinates">53.18° N &nbsp; 10.38° E</span></div>
+  </main>
+}
+export default App
