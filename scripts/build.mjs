@@ -19,4 +19,5 @@ if (!js.includes('Landeplatz bearbeiten') || !js.includes('api/rthtrack/settings
 await mkdir('assets', { recursive: true })
 await cp('dist/assets', 'assets', { recursive: true })
 await copyFile('dist/index.html', 'index.html')
+await copyFile('dist/notification-sw.js', 'notification-sw.js')
 console.log('Published current source to root HTML and assets.')

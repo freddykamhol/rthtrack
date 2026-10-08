@@ -1,1 +1,1 @@
-RTHtrack Node backend and verified build deployment 2026-10-08 revision 2
+RTHtrack own position and notification deployment 2026-10-08 revision 3
