@@ -67,7 +67,7 @@ function fromAdsb(aircraft: AdsbAircraft): Flight | null {
 async function fetchLiveFlights(signal: AbortSignal) {
   // The flight feed is intentionally wider than the active district layer:
   // aircraft outside the user's own counties should remain visible too.
-  const urls = ['./api.php?action=flights']
+  const urls = ['/adsb-live']
   const payloads = (await Promise.all(urls.map(async (url) => { try { const response = await fetch(url, { signal }); return response.ok ? await response.json() as { ac?: AdsbAircraft[] } : null } catch { return null } }))).filter((payload): payload is { ac?: AdsbAircraft[] } => payload !== null)
   if (!payloads.length) throw new Error('ADSB feed unavailable')
   const unique = new Map<string, AdsbAircraft>()
@@ -78,7 +78,7 @@ async function fetchLiveFlights(signal: AbortSignal) {
 function Logo() { return <div className="logo"><span className="logo-mark">✦</span><span>RTH<span>track</span></span></div> }
 function Icon({ children }: { children: React.ReactNode }) { return <span className="icon" aria-hidden="true">{children}</span> }
 function escapeHtml(value: string) { return value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] || character) }
-const settingsApi = './api.php?action=settings'
+const settingsApi = '/api/rthtrack/settings'
 function profileToken() {
   const params = new URLSearchParams(location.hash.slice(1))
   let token = params.get('profile') || ''

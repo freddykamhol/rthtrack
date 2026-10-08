@@ -1,3 +1,5 @@
-// Root entrypoint for the RTHtrack application.
-// Vite resolves the React/TypeScript application from here.
-import './src/main.tsx'
+// CommonJS-compatible Passenger startup file. Browser code is built separately.
+import('./server.mjs').then(({ startServer }) => startServer()).catch((error) => {
+  console.error('RTHtrack startup failed', error)
+  process.exit(1)
+})
