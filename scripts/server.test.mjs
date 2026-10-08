@@ -15,7 +15,7 @@ test('independent clients persist pads across restart; conflicts and invalid wri
   try {
     const token = randomBytes(32).toString('hex')
     const headers = { 'Content-Type':'application/json', 'X-RTHtrack-Profile':token }
-    const settings = { districts:['Höxter'], showFlights:true, showPads:true, showOtherHelis:false, notificationsEnabled:true, pads:[{id:'test',name:'Testwiese',category:'Wiese',notes:'Integrationstest',coords:[51.77,9.38],active:true}] }
+    const settings = { districts:['Höxter'], showFlights:true, showPads:true, showOtherHelis:false, notificationsEnabled:true, nearbyRadiusKm:1, nearbyPadsEnabled:true, weatherEnabled:false, pads:[{id:'test',name:'Testwiese',category:'Wiese',district:'',availability:'both',notes:'Integrationstest',coords:[51.77,9.38],active:true}] }
     assert.equal((await fetch(base + '/api/rthtrack/settings')).status, 401)
     assert.equal((await (await fetch(base + '/api/rthtrack/settings', { headers })).json()).revision, 0)
     const put = (revision, value=settings) => fetch(base + '/api/rthtrack/settings', {method:'PUT',headers,body:JSON.stringify({revision,settings:value})})

@@ -10,8 +10,9 @@ const categories = ['Wiese', 'Landeplatz beleuchtet', 'Krankenhaus', 'Feuerwehr'
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 function validate(s) {
   if (!s || !Array.isArray(s.districts) || s.districts.length > 20 || !s.districts.every((d) => typeof d === 'string' && d.length <= 160) || !Array.isArray(s.pads) || s.pads.length > 500) return false
-  if (!['showFlights','showPads','showOtherHelis','notificationsEnabled'].every((k) => typeof s[k] === 'boolean')) return false
-  return s.pads.every((p) => p && typeof p.id === 'string' && p.id.length < 160 && typeof p.name === 'string' && p.name.trim().length > 0 && p.name.length <= 160 && typeof p.notes === 'string' && p.notes.length <= 5000 && categories.includes(p.category) && typeof p.active === 'boolean' && Array.isArray(p.coords) && p.coords.length === 2 && p.coords.every(Number.isFinite) && Math.abs(p.coords[0]) <= 90 && Math.abs(p.coords[1]) <= 180)
+  if (!['showFlights','showPads','showOtherHelis','notificationsEnabled','nearbyPadsEnabled','weatherEnabled'].every((k) => typeof s[k] === 'boolean')) return false
+  if (!Number.isFinite(s.nearbyRadiusKm) || s.nearbyRadiusKm < 0.1 || s.nearbyRadiusKm > 25) return false
+  return s.pads.every((p) => p && typeof p.id === 'string' && p.id.length < 160 && typeof p.name === 'string' && p.name.trim().length > 0 && p.name.length <= 160 && typeof p.district === 'string' && p.district.length <= 160 && typeof p.notes === 'string' && p.notes.length <= 5000 && categories.includes(p.category) && ['day','night','both'].includes(p.availability) && typeof p.active === 'boolean' && Array.isArray(p.coords) && p.coords.length === 2 && p.coords.every(Number.isFinite) && Math.abs(p.coords[0]) <= 90 && Math.abs(p.coords[1]) <= 180)
 }
 function upstream(url) {
   return new Promise((resolve, reject) => {

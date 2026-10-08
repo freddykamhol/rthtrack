@@ -27,5 +27,5 @@
   .location-message { bottom:130px; width:max-content; }
   .notification-popover { max-height:calc(100dvh - 100px); overflow:auto; }
   .weather-widget { top:108px; left:13px; right:13px; width:max-content; max-width:calc(100vw - 26px); }
-  .nearby-pads { left:10px; right:10px; bottom:74px; width:auto; padding:11px; }.nearby-pad-card { min-width:175px; }.nearby-pads-scroll { margin-right:-3px; }
+  .nearby-pads { left:10px; right:10px; bottom:138px; width:auto; padding:11px; max-height:112px; overflow:hidden; }.nearby-pad-card { min-width:175px; }.nearby-pads-scroll { margin-right:-3px; }
 }

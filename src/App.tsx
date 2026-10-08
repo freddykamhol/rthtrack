@@ -86,6 +86,12 @@ function Logo() { return <div className="logo"><span className="logo-mark">✦</
 function Icon({ children }: { children: React.ReactNode }) { return <span className="icon" aria-hidden="true">{children}</span> }
 function escapeHtml(value: string) { return value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] || character) }
 const settingsApi = '/api/rthtrack/settings'
+async function readJsonResponse(response: Response) {
+  const raw = await response.text()
+  let body: { error?: string; revision?: number; settings?: unknown }
+  try { body = raw ? JSON.parse(raw) as typeof body : {} } catch { throw new Error(`Server antwortet nicht mit JSON (${response.status})`) }
+  return { response, body }
+}
 function profileToken() {
   const params = new URLSearchParams(location.hash.slice(1))
   let token = params.get('profile') || ''
@@ -101,12 +107,12 @@ function isPadCategory(value: unknown): value is PadCategory { return typeof val
 function readSettings(value: unknown): PersistedSettings {
   if (!value || typeof value !== 'object') return initialSettings
   const input = value as Partial<PersistedSettings>
-  return { districts: Array.isArray(input.districts) ? input.districts.filter((item): item is string => typeof item === 'string') : initialSettings.districts, showFlights: input.showFlights !== false, showPads: input.showPads !== false, showOtherHelis: input.showOtherHelis === true, notificationsEnabled: input.notificationsEnabled !== false, pads: Array.isArray(input.pads) ? input.pads.filter((pad): pad is LandingPad => Boolean(pad && typeof pad.id === 'string' && typeof pad.name === 'string' && Array.isArray(pad.coords) && isPadCategory(pad.category) && ['day', 'night', 'both'].includes(pad.availability as string))) : defaultPads, nearbyRadiusKm: typeof input.nearbyRadiusKm === 'number' ? Math.min(25, Math.max(0.1, input.nearbyRadiusKm)) : initialSettings.nearbyRadiusKm, nearbyPadsEnabled: input.nearbyPadsEnabled !== false, weatherEnabled: input.weatherEnabled === true }
+  return { districts: Array.isArray(input.districts) ? input.districts.filter((item): item is string => typeof item === 'string') : initialSettings.districts, showFlights: input.showFlights !== false, showPads: input.showPads !== false, showOtherHelis: input.showOtherHelis === true, notificationsEnabled: input.notificationsEnabled !== false, pads: Array.isArray(input.pads) ? input.pads.map((pad) => pad && typeof pad.id === 'string' && typeof pad.name === 'string' && Array.isArray(pad.coords) && isPadCategory(pad.category) ? { ...pad, district: typeof pad.district === 'string' ? pad.district : '', availability: ['day', 'night', 'both'].includes(pad.availability as string) ? pad.availability as PadAvailability : 'both' } as LandingPad : null).filter((pad): pad is LandingPad => pad !== null) : defaultPads, nearbyRadiusKm: typeof input.nearbyRadiusKm === 'number' ? Math.min(25, Math.max(0.1, input.nearbyRadiusKm)) : initialSettings.nearbyRadiusKm, nearbyPadsEnabled: input.nearbyPadsEnabled !== false, weatherEnabled: input.weatherEnabled === true }
 }
 
 function App() {
   const mapRef = useRef<HTMLDivElement>(null); const leafletMap = useRef<L.Map | null>(null); const layersRef = useRef<L.LayerGroup | null>(null); const districtLayerRef = useRef<L.LayerGroup | null>(null)
-  const [flights, setFlights] = useState<Flight[]>([]); const [weather, setWeather] = useState<{ temperature: number; precipitation: number; windDirection: number; windSpeed: number; weatherCode: number } | null>(null); const [weatherError, setWeatherError] = useState(''); const [nearbyRadiusKm, setNearbyRadiusKm] = useState(1); const [nearbyPadsEnabled, setNearbyPadsEnabled] = useState(true); const [weatherEnabled, setWeatherEnabled] = useState(false); const [dataMode, setDataMode] = useState<'live' | 'offline'>('offline'); const [selection, setSelectedFlight] = useState<Flight | null>(null); const [showFlights, setShowFlights] = useState(true); const [showPads, setShowPads] = useState(true); const [showOtherHelis, setShowOtherHelis] = useState(false); const [search, setSearch] = useState(''); const [panelOpen, setPanelOpen] = useState(true); const [muted, setMuted] = useState(false); const [showSettings, setShowSettings] = useState(false); const [showNotifications, setShowNotifications] = useState(false); const [notificationsEnabled, setNotificationsEnabled] = useState(true); const [districts, setDistricts] = useState(['Uelzen', 'Lüneburg', 'Harburg']); const [districtInput, setDistrictInput] = useState(''); const [districtNames, setDistrictNames] = useState<string[]>([]); const [pads, setPads] = useState<LandingPad[]>(defaultPads); const [selectedPad, setSelectedPad] = useState<LandingPad | null>(null); const [padDraft, setPadDraft] = useState<LandingPad | null>(null); const [mapMenu, setMapMenu] = useState<{ x: number; y: number; coords: [number, number] } | null>(null); const [persistenceStatus, setPersistenceStatus] = useState<'loading' | 'server' | 'saving' | 'error'>('loading'); const [saveError, setSaveError] = useState(''); const [profile] = useState(profileToken); const revision = useRef(0); const saved = useRef(''); const saving = useRef(false)
+  const [flights, setFlights] = useState<Flight[]>([]); const [weather, setWeather] = useState<{ temperature: number; precipitation: number; windDirection: number; windSpeed: number; weatherCode: number } | null>(null); const [weatherError, setWeatherError] = useState(''); const [nearbyRadiusKm, setNearbyRadiusKm] = useState(1); const [nearbyPadsEnabled, setNearbyPadsEnabled] = useState(true); const [weatherEnabled, setWeatherEnabled] = useState(false); const [dataMode, setDataMode] = useState<'live' | 'offline'>('offline'); const [selection, setSelectedFlight] = useState<Flight | null>(null); const [showFlights, setShowFlights] = useState(true); const [showPads, setShowPads] = useState(true); const [showOtherHelis, setShowOtherHelis] = useState(false); const [search, setSearch] = useState(''); const [panelOpen, setPanelOpen] = useState(true); const [muted, setMuted] = useState(false); const [showSettings, setShowSettings] = useState(false); const [showNotifications, setShowNotifications] = useState(false); const [notificationsEnabled, setNotificationsEnabled] = useState(true); const [districts, setDistricts] = useState(['Uelzen', 'Lüneburg', 'Harburg']); const [districtInput, setDistrictInput] = useState(''); const [districtNames, setDistrictNames] = useState<string[]>([]); const [pads, setPads] = useState<LandingPad[]>(defaultPads); const [selectedPad, setSelectedPad] = useState<LandingPad | null>(null); const [padDraft, setPadDraft] = useState<LandingPad | null>(null); const [mapMenu, setMapMenu] = useState<{ x: number; y: number; coords: [number, number] } | null>(null); const [persistenceStatus, setPersistenceStatus] = useState<'loading' | 'server' | 'saving' | 'error'>('loading'); const [saveError, setSaveError] = useState(''); const [profile] = useState(profileToken); const revision = useRef(0); const saved = useRef(''); const saving = useRef(false); const hydrating = useRef(true)
   const own = useOwnPosition()
   const centerOwn = useRef(false)
   const [notices, setNotices] = useState<Notice[]>([])
@@ -178,29 +184,35 @@ function App() {
 
   useEffect(() => {
     let active = true
-    fetch(settingsApi, { headers: { 'X-RTHtrack-Profile': profile } }).then(async (response) => {
-      if (!response.ok) throw new Error('Server-Speicher nicht erreichbar')
-      const body = await response.json()
+    fetch(settingsApi, { headers: { 'X-RTHtrack-Profile': profile } }).then(readJsonResponse).then(({ response, body }) => {
+      if (!response.ok) throw new Error(body.error || 'Server-Speicher nicht erreichbar')
       if (!active) return
       const incoming = readSettings(body.settings)
-      revision.current = body.revision
+      revision.current = typeof body.revision === 'number' ? body.revision : 0
       saved.current = JSON.stringify(incoming)
       setDistricts(incoming.districts); setShowFlights(incoming.showFlights); setShowPads(incoming.showPads)
-      setShowOtherHelis(incoming.showOtherHelis); setNotificationsEnabled(incoming.notificationsEnabled); setPads(incoming.pads); setNearbyRadiusKm(incoming.nearbyRadiusKm); setNearbyPadsEnabled(incoming.nearbyPadsEnabled); setWeatherEnabled(incoming.weatherEnabled); setNearbyRadiusKm(incoming.nearbyRadiusKm); setNearbyPadsEnabled(incoming.nearbyPadsEnabled); setWeatherEnabled(incoming.weatherEnabled)
+      setShowOtherHelis(incoming.showOtherHelis); setNotificationsEnabled(incoming.notificationsEnabled); setPads(incoming.pads); setNearbyRadiusKm(incoming.nearbyRadiusKm); setNearbyPadsEnabled(incoming.nearbyPadsEnabled); setWeatherEnabled(incoming.weatherEnabled)
+      hydrating.current = false
       setPersistenceStatus('server')
     }).catch((error) => { if (active) { setSaveError(error.message); setPersistenceStatus('error') } })
     return () => { active = false }
   }, [profile])
   useEffect(() => {
-    if (persistenceStatus !== 'server' || saved.current === JSON.stringify(currentSettings)) return
+    if (hydrating.current || persistenceStatus !== 'server' || saved.current === JSON.stringify(currentSettings)) return
     const timer = window.setTimeout(async () => {
       if (saving.current) return
       saving.current = true; setPersistenceStatus('saving')
       try {
-        const response = await fetch(settingsApi, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-RTHtrack-Profile': profile }, body: JSON.stringify({ revision: revision.current, settings: currentSettings }) })
-        const body = await response.json()
+        const { response, body } = await readJsonResponse(await fetch(settingsApi, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-RTHtrack-Profile': profile }, body: JSON.stringify({ revision: revision.current, settings: currentSettings }) }))
+        if (response.status === 409) {
+          const fresh = await readJsonResponse(await fetch(settingsApi, { headers: { 'X-RTHtrack-Profile': profile } }))
+          if (!fresh.response.ok) throw new Error(fresh.body.error || 'Server-Speicher nicht erreichbar')
+          revision.current = typeof fresh.body.revision === 'number' ? fresh.body.revision : revision.current
+          setPersistenceStatus('server')
+          return
+        }
         if (!response.ok) throw new Error(body.error || 'Speichern fehlgeschlagen')
-        revision.current = body.revision; saved.current = JSON.stringify(currentSettings); setPersistenceStatus('server')
+        revision.current = typeof body.revision === 'number' ? body.revision : revision.current; saved.current = JSON.stringify(currentSettings); setPersistenceStatus('server')
       } catch (error) { setSaveError(error instanceof Error ? error.message : 'Speichern fehlgeschlagen'); setPersistenceStatus('error') }
       finally { saving.current = false }
     }, 500)
