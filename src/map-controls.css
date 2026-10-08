@@ -7,6 +7,7 @@
 .own-position .radar-leader { background:#ff4545; }
 .own-position .radar-label strong { color:#ff6565; }
 .flight-sheet { padding-top:26px; }
+.aircraft-icon { display:none!important; }
 .flight-sheet .sheet-header { padding-right:36px; }
 .flight-sheet .sheet-collapse { position:absolute; top:8px; right:8px; left:auto; transform:none; display:grid; place-items:center; width:44px; height:44px; border:1px solid var(--line); border-radius:12px; z-index:2; }
 .flight-sheet.closed { display:none; }
