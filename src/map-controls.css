@@ -32,7 +32,12 @@
 }
 
 /* Collision-free map overlay layout */
-.weather-widget { top:142px; max-width:min(360px,calc(100vw - 48px)); pointer-events:none; box-shadow:0 12px 34px #020b0766; }
+.weather-widget { top:142px; width:max-content; max-width:min(330px,calc(100vw - 96px)); min-height:42px; padding:8px 11px; gap:8px; pointer-events:none; box-shadow:0 12px 34px #020b0766; }
+.weather-widget strong { font-size:16px; line-height:1; }
+.weather-metric,.weather-wind { color:#a9bdb2; font:9px 'DM Mono'; white-space:nowrap; }
+.weather-divider { width:1px; height:18px; background:#ffffff1c; }
+.weather-wind { display:flex; align-items:center; gap:5px; }
+.weather-wind i { display:inline-block; color:#8ee8b5; font-style:normal; font-size:13px; line-height:1; transform-origin:center; }
 .nearby-pads { left:50%; right:auto; bottom:24px; width:min(520px,calc(100vw - 610px)); min-width:300px; transform:translateX(-50%); box-shadow:0 14px 38px #020b0773; }
 .nearby-pads-scroll { overscroll-behavior-x:contain; scroll-snap-type:x proximity; touch-action:pan-x; }
 .nearby-pad-card { scroll-snap-align:start; }
@@ -49,13 +54,12 @@
 }
 
 @media(max-width:700px) {
-  .weather-widget { top:123px; left:13px; right:62px; width:auto; max-width:none; min-height:44px; padding:8px 10px; gap:8px; }
+  .weather-widget { top:123px; left:13px; right:auto; width:max-content; max-width:calc(100vw - 84px); min-height:42px; padding:8px 10px; gap:7px; }
   .weather-widget strong { font-size:15px; }
-  .weather-widget small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .weather-metric,.weather-wind { font-size:8px; }
   .weather-icon { font-size:18px; }
   .nearby-pads { left:10px; right:10px; bottom:calc(82px + env(safe-area-inset-bottom)); width:auto; min-width:0; max-height:108px; transform:none; padding:9px 10px; border-radius:14px; }
-  .nearby-pads-head .eyebrow { display:none; }
-  .nearby-pads-head strong { margin-bottom:5px; }
+  .nearby-pads-head { display:none; }
   .nearby-pads-scroll { gap:7px; padding-bottom:1px; scrollbar-width:none; }
   .nearby-pads-scroll::-webkit-scrollbar { display:none; }
   .nearby-pad-card { min-width:min(78vw,260px); padding:8px; }
