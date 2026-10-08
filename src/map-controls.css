@@ -30,3 +30,33 @@
   .weather-widget { top:108px; left:13px; right:13px; width:max-content; max-width:calc(100vw - 26px); }
   .nearby-pads { left:10px; right:10px; bottom:138px; width:auto; padding:11px; max-height:112px; overflow:hidden; }.nearby-pad-card { min-width:175px; }.nearby-pads-scroll { margin-right:-3px; }
 }
+
+/* Collision-free map overlay layout */
+.weather-widget { top:142px; max-width:min(360px,calc(100vw - 48px)); pointer-events:none; box-shadow:0 12px 34px #020b0766; }
+.nearby-pads { left:50%; right:auto; bottom:24px; width:min(520px,calc(100vw - 610px)); min-width:300px; transform:translateX(-50%); box-shadow:0 14px 38px #020b0773; }
+.nearby-pads-scroll { overscroll-behavior-x:contain; scroll-snap-type:x proximity; touch-action:pan-x; }
+.nearby-pad-card { scroll-snap-align:start; }
+.nearby-pads:has(.nearby-empty),
+.map-app:has(.flight-sheet.open) .nearby-pads,
+.map-app:has(.reopen-details) .nearby-pads,
+.map-app:has(.pad-details) .nearby-pads,
+.map-app:has(.map-context-menu) .nearby-pads,
+.map-app:has(.settings-backdrop) .nearby-pads { display:none; }
+.map-app:has(.settings-backdrop) .weather-widget { display:none; }
+
+@media(min-width:701px) and (max-width:1100px) {
+  .nearby-pads { left:190px; right:76px; width:auto; min-width:0; transform:none; }
+}
+
+@media(max-width:700px) {
+  .weather-widget { top:123px; left:13px; right:62px; width:auto; max-width:none; min-height:44px; padding:8px 10px; gap:8px; }
+  .weather-widget strong { font-size:15px; }
+  .weather-widget small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .weather-icon { font-size:18px; }
+  .nearby-pads { left:10px; right:10px; bottom:calc(82px + env(safe-area-inset-bottom)); width:auto; min-width:0; max-height:108px; transform:none; padding:9px 10px; border-radius:14px; }
+  .nearby-pads-head .eyebrow { display:none; }
+  .nearby-pads-head strong { margin-bottom:5px; }
+  .nearby-pads-scroll { gap:7px; padding-bottom:1px; scrollbar-width:none; }
+  .nearby-pads-scroll::-webkit-scrollbar { display:none; }
+  .nearby-pad-card { min-width:min(78vw,260px); padding:8px; }
+}
