@@ -290,7 +290,7 @@ function App() {
     if (!map || !own.position) return
     const { coords, accuracy } = own.position
     const marker = L.marker(coords, { zIndexOffset: 1000, icon: L.divIcon({ className: 'flight-icon', html: '<div class="radar-marker own-position" style="--marker:#ff4545"><div class="radar-square"></div><div class="radar-leader"></div><div class="radar-label"><strong>Own Position</strong></div></div>', iconSize: [270, 80], iconAnchor: [12.5, 67.5] }) }).addTo(map)
-    const updateLabelSide = () => { const point = map.latLngToContainerPoint(coords); marker.getElement()?.querySelector('.own-position')?.classList.toggle('own-label-left', map.getSize().x - point.x < 190) }
+    const updateLabelSide = () => { const point = map.latLngToContainerPoint(coords); marker.getElement()?.querySelector('.own-position')?.classList.toggle('own-label-left', map.getSize().x - point.x < 205 && point.x > 165) }
     updateLabelSide(); map.on('moveend zoomend resize', updateLabelSide)
     const circle = L.circle(coords, { radius: accuracy, color: '#ff4545', weight: 1, fillOpacity: 0.07, interactive: false }).addTo(map)
     marker.bindTooltip('Own Position · Genauigkeit ±' + Math.round(accuracy) + ' m')

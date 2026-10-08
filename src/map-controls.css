@@ -6,12 +6,9 @@
 .pad-manage .category-symbol { float:left; margin-top:3px; }
 .own-position .radar-leader { background:#ff4545; }
 .own-position .radar-label strong { color:#ff6565; }
-.own-position .radar-label { bottom:48px; }
-.own-position.own-label-left .radar-label { left:-158px; text-align:right; }
-.own-position.own-label-left .radar-leader { left:-48px; transform:rotate(45deg); transform-origin:right center; }
-.own-position:not(.own-label-left) .radar-label { left:71px; }
-.own-position .radar-label { left:88px; bottom:34px; min-height:48px; justify-content:flex-start; text-align:left; }
-.own-position:not(.own-label-left) .radar-label { left:88px; }
+.own-position .radar-label { left:78px; bottom:60px; width:max-content; min-width:0; padding:1px 3px; line-height:19px; text-align:left; }
+.own-position.own-label-left .radar-label { left:auto; right:300px; text-align:right; }
+.own-position.own-label-left .radar-leader { left:-49px; transform:rotate(45deg); transform-origin:right center; }
 .flight-sheet { padding-top:26px; }
 .aircraft-icon { display:none!important; }
 .flight-sheet .sheet-header { padding-right:36px; }
