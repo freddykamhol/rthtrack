@@ -5,6 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node app.js",
+    "test": "node --test scripts/server.test.mjs",
     "dev": "vite",
     "build": "tsc -b && node scripts/build.mjs",
     "lint": "oxlint src scripts server.mjs app.js vite.config.mts",
