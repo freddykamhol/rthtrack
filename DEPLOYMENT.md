@@ -1,5 +1,7 @@
 # Production deployment
 
+CARTO requires a Basemaps key. Set VITE_CARTO_API_KEY in .env.local before building, or in the build environment. GitHub Actions uses the repository secret of the same name. The compiled browser bundle includes this browser-facing key; .env.local itself stays untracked. The committed root bundle is already built with the configured key, so Plesk Git deployment does not need a separate key entry unless rebuilding there.
+
 Node.js 18+; startup file app.js; npm start locally. Passenger loads the CommonJS-compatible root startup file, which imports server.mjs and starts the HTTP listener. No extra runtime dependencies or PHP are needed.
 
 Run npm ci and npm run build. The build always compiles client/index.html and src/main.tsx, verifies current feature code, and copies generated HTML/assets to the repository root for the existing Git deployment. Do not edit generated root HTML. Commit generated assets with source changes. Restart Passenger after deployment (the tracked tmp/restart.txt triggers a restart when updated).

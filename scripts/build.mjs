@@ -1,9 +1,13 @@
-import { build } from 'vite'
+import { build, loadEnv } from 'vite'
 import { readFile, mkdir, copyFile, cp } from 'node:fs/promises'
 import path from 'node:path'
 
 // Always compile the source entry, never the previously published root HTML.
 const source = await readFile('client/index.html', 'utf8')
+const env = loadEnv('production', process.cwd(), 'VITE_')
+if (!(process.env.VITE_CARTO_API_KEY || env.VITE_CARTO_API_KEY)?.trim()) {
+  throw new Error('VITE_CARTO_API_KEY fehlt. CARTO-Key in .env.local oder Build-Umgebung setzen.')
+}
 await build({
   plugins: [{ name: 'source-html', enforce: 'pre', transformIndexHtml: { order: 'pre', handler: () => source } }],
 })
