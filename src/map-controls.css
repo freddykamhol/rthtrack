@@ -6,6 +6,8 @@
 .pad-manage .category-symbol { float:left; margin-top:3px; }
 .own-position .radar-leader { background:#ff4545; }
 .own-position .radar-label strong { color:#ff6565; }
+.own-position.own-label-left .radar-label { left:-158px; text-align:right; }
+.own-position.own-label-left .radar-leader { left:-48px; transform:rotate(45deg); transform-origin:right center; }
 .flight-sheet { padding-top:26px; }
 .aircraft-icon { display:none!important; }
 .flight-sheet .sheet-header { padding-right:36px; }

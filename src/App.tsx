@@ -290,10 +290,12 @@ function App() {
     if (!map || !own.position) return
     const { coords, accuracy } = own.position
     const marker = L.marker(coords, { zIndexOffset: 1000, icon: L.divIcon({ className: 'flight-icon', html: '<div class="radar-marker own-position" style="--marker:#ff4545"><div class="radar-square"></div><div class="radar-leader"></div><div class="radar-label"><strong>Own Position</strong></div></div>', iconSize: [270, 80], iconAnchor: [12.5, 67.5] }) }).addTo(map)
+    const updateLabelSide = () => { const point = map.latLngToContainerPoint(coords); marker.getElement()?.querySelector('.own-position')?.classList.toggle('own-label-left', map.getSize().x - point.x < 190) }
+    updateLabelSide(); map.on('moveend zoomend resize', updateLabelSide)
     const circle = L.circle(coords, { radius: accuracy, color: '#ff4545', weight: 1, fillOpacity: 0.07, interactive: false }).addTo(map)
     marker.bindTooltip('Own Position · Genauigkeit ±' + Math.round(accuracy) + ' m')
     if (centerOwn.current && germanyBounds.contains(coords)) { map.flyTo(coords, Math.max(map.getMinZoom(), 12)); centerOwn.current = false }
-    return () => { marker.remove(); circle.remove() }
+    return () => { map.off('moveend zoomend resize', updateLabelSide); marker.remove(); circle.remove() }
   }, [own.position])
   const locate = () => { centerOwn.current = true; own.start(); if (own.position && germanyBounds.contains(own.position.coords)) { leafletMap.current?.flyTo(own.position.coords, 12); centerOwn.current = false } }; const zoom = (delta: number) => leafletMap.current?.setZoom((leafletMap.current.getZoom() || 10) + delta)
   const createPad = () => { if (!mapMenu) return; setPadDraft({ id: `pad-${Date.now()}`, name: 'Neuer Landeplatz', category: 'Wiese', coords: mapMenu.coords, district: '', notes: '', active: true, availability: 'both' }); setMapMenu(null) }
