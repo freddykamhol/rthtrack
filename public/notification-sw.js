@@ -1,9 +1,9 @@
+const CACHE_KEY = 'rthtrack-live-snapshot'
 self.addEventListener('install', () => self.skipWaiting())
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close()
-  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
-    const current = windows.find((client) => new URL(client.url).origin === self.location.origin)
-    return current ? current.focus() : self.clients.openWindow('/')
-  }))
-})
+function relevant(aircraft) { const callSign = (aircraft.flight || '').trim().toUpperCase(); const registration = (aircraft.r || aircraft.registration || '').trim().toUpperCase(); return Boolean(callSign || registration) && (aircraft.category === 'A7' || /^(CHX|CHR|RTH|ITH|HEMS|RESCUE)/.test(callSign) || ['D-HXFT', 'D-HLDM', 'D-HXFW'].includes(registration)) }
+async function readSnapshot() { const cache = await caches.open(CACHE_KEY); const response = await cache.match('/snapshot'); return response ? response.json() : null }
+async function writeSnapshot(snapshot) { const cache = await caches.open(CACHE_KEY); await cache.put('/snapshot', new Response(JSON.stringify(snapshot), { headers: { 'Content-Type': 'application/json' } })) }
+async function checkLiveFeed() { const response = await fetch('/adsb-live', { cache: 'no-store' }); if (!response.ok) throw new Error('ADS-B feed unavailable'); const current = (await response.json()).ac?.filter(relevant).map((aircraft) => ({ id: aircraft.hex, callSign: (aircraft.flight || aircraft.r || aircraft.hex).trim(), status: aircraft.alt_baro === 'ground' ? 'Am Boden' : 'Im Flug' })) || []; const previous = await readSnapshot(); await writeSnapshot(current); if (!previous) return; const old = new Map(previous.map((aircraft) => [aircraft.id, aircraft])); const events = current.filter((aircraft) => { const before = old.get(aircraft.id); return !before || before.status !== aircraft.status }).map((aircraft) => `${aircraft.callSign}: ${aircraft.status === 'Am Boden' ? 'Bodenstatus empfangen' : 'neu im Live-Feed'}`); if (events.length) await self.registration.showNotification('ChrisTRACK', { body: events.slice(0, 4).join('\n'), tag: 'christrack-background', icon: '/icons/icon-192.png' }) }
+self.addEventListener('periodicsync', (event) => { if (event.tag === 'rthtrack-live') event.waitUntil(checkLiveFeed().catch(() => {})) })
+self.addEventListener('notificationclick', (event) => { event.notification.close(); event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => { const current = windows.find((client) => new URL(client.url).origin === self.location.origin); return current ? current.focus() : self.clients.openWindow('/') })) })

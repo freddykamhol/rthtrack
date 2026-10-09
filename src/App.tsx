@@ -11,11 +11,11 @@ import { profileToken } from './profile.mjs'
 const germanyBounds = L.latLngBounds([47.27, 5.87], [55.06, 15.04])
 type Notice = { id: string; flightId: string; title: string; time: number }
 
-type Flight = { id: string; callSign: string; type: 'RTH' | 'ITH' | 'HELI'; model: string; operator: string; status: 'Im Flug' | 'Am Boden'; altitude: string; speed: string; location: string; accent: string; coords: [number, number]; live: boolean }
+type Flight = { id: string; callSign: string; type: 'RTH' | 'ITH' | 'HELI'; model: string; operator: string; status: 'Im Flug' | 'Am Boden'; altitude: string; speed: string; heading: number | null; previousCoords?: [number, number]; location: string; accent: string; coords: [number, number]; live: boolean }
 type PadAvailability = 'day' | 'night' | 'both'
 type LandingPad = { id: string; name: string; category: PadCategory; coords: [number, number]; district: string; notes: string; active: boolean; availability: PadAvailability }
 type PersistedSettings = { districts: string[]; showFlights: boolean; showPads: boolean; showOtherHelis: boolean; notificationsEnabled: boolean; pads: LandingPad[]; nearbyRadiusKm: number; nearbyPadsEnabled: boolean; weatherEnabled: boolean }
-type AdsbAircraft = { hex: string; flight?: string; registration?: string; r?: string; t?: string; category?: string; lat?: number; lon?: number; alt_baro?: number | string; gs?: number; lastPosition?: { lat?: number; lon?: number } }
+type AdsbAircraft = { hex: string; flight?: string; registration?: string; r?: string; t?: string; category?: string; lat?: number; lon?: number; alt_baro?: number | string; gs?: number; track?: number; lastPosition?: { lat?: number; lon?: number } }
 
 const defaultPads: LandingPad[] = []
 const padCategories: PadCategory[] = ['Wiese', 'Landeplatz beleuchtet', 'Krankenhaus', 'Feuerwehr', 'Sportplatz', 'Sonstige']
@@ -56,6 +56,15 @@ function findRegistryEntry(callsign: string, registration: string) {
 function isRegisteredGermanRescue(callsign: string, registration: string) {
   return Boolean(findRegistryEntry(callsign, registration)) || germanRescueRegistry.callsignPrefixes.some((prefix) => callsign.toUpperCase().startsWith(prefix)) || germanRescueRegistry.registrations.has(registration)
 }
+function bearingDegrees(from: [number, number], to: [number, number]) {
+  const radians = Math.PI / 180
+  const latitude1 = from[0] * radians
+  const latitude2 = to[0] * radians
+  const longitudeDelta = (to[1] - from[1]) * radians
+  const y = Math.sin(longitudeDelta) * Math.cos(latitude2)
+  const x = Math.cos(latitude1) * Math.sin(latitude2) - Math.sin(latitude1) * Math.cos(latitude2) * Math.cos(longitudeDelta)
+  return Math.round((Math.atan2(y, x) * 180 / Math.PI + 360) % 360)
+}
 function fromAdsb(aircraft: AdsbAircraft): Flight | null {
   const callsign = aircraft.flight?.trim() || ''
   const registration = (aircraft.r || aircraft.registration || '').trim().toUpperCase()
@@ -69,7 +78,9 @@ function fromAdsb(aircraft: AdsbAircraft): Flight | null {
   const classifiedType = registryEntry?.type || (isRegisteredRescue ? (isIth ? 'ITH' : 'RTH') : 'HELI')
   const operator = registryEntry?.operator || (/ADAC/i.test(callsign) ? 'ADAC Luftrettung' : /DRF/i.test(callsign) ? 'DRF Luftrettung' : 'Luftrettung / ADS-B')
   const altitude = typeof aircraft.alt_baro === 'number' ? `${aircraft.alt_baro.toLocaleString('de-DE')} ft` : '--'
-  return { id: aircraft.hex, callSign: registryEntry?.displayName || callsign || registration, type: classifiedType, model: aircraft.t || 'Helikopter', operator, status: aircraft.alt_baro === 'ground' ? 'Am Boden' : 'Im Flug', altitude, speed: aircraft.gs == null ? '--' : `${Math.round(aircraft.gs * 1.852)} km/h`, location: registration || 'ADS-B-Position', accent: classifiedType === 'ITH' ? '#9b83ff' : classifiedType === 'RTH' ? '#ff6b4a' : '#56b6ff', coords: [latitude, longitude], live: true }
+  const previousCoords = aircraft.lastPosition?.lat != null && aircraft.lastPosition?.lon != null ? [aircraft.lastPosition.lat, aircraft.lastPosition.lon] as [number, number] : undefined
+  const heading = typeof aircraft.track === 'number' && Number.isFinite(aircraft.track) ? Math.round(aircraft.track) : previousCoords && (previousCoords[0] !== latitude || previousCoords[1] !== longitude) ? bearingDegrees(previousCoords, [latitude, longitude]) : null
+  return { id: aircraft.hex, callSign: registryEntry?.displayName || callsign || registration, type: classifiedType, model: aircraft.t || 'Helikopter', operator, status: aircraft.alt_baro === 'ground' ? 'Am Boden' : 'Im Flug', altitude, speed: aircraft.gs == null ? '--' : `${Math.round(aircraft.gs * 1.852)} km/h`, heading, previousCoords, location: registration || 'ADS-B-Position', accent: classifiedType === 'ITH' ? '#9b83ff' : classifiedType === 'RTH' ? '#ff6b4a' : '#56b6ff', coords: [latitude, longitude], live: true }
 }
 
 async function fetchLiveFlights(signal: AbortSignal) {
@@ -102,13 +113,14 @@ function readSettings(value: unknown): PersistedSettings {
 }
 
 function App() {
-  const mapRef = useRef<HTMLDivElement>(null); const leafletMap = useRef<L.Map | null>(null); const layersRef = useRef<L.LayerGroup | null>(null); const districtLayerRef = useRef<L.LayerGroup | null>(null)
+  const mapRef = useRef<HTMLDivElement>(null); const leafletMap = useRef<L.Map | null>(null); const layersRef = useRef<L.LayerGroup | null>(null); const trackLayerRef = useRef<L.LayerGroup | null>(null); const districtLayerRef = useRef<L.LayerGroup | null>(null)
   const [flights, setFlights] = useState<Flight[]>([]); const [weather, setWeather] = useState<{ temperature: number; precipitation: number; windDirection: number; windSpeed: number; weatherCode: number } | null>(null); const [weatherError, setWeatherError] = useState(''); const [nearbyRadiusKm, setNearbyRadiusKm] = useState(1); const [nearbyPadsEnabled, setNearbyPadsEnabled] = useState(true); const [weatherEnabled, setWeatherEnabled] = useState(false); const [dataMode, setDataMode] = useState<'live' | 'offline'>('offline'); const [selection, setSelectedFlight] = useState<Flight | null>(null); const [showFlights, setShowFlights] = useState(true); const [showPads, setShowPads] = useState(true); const [showOtherHelis, setShowOtherHelis] = useState(false); const [search, setSearch] = useState(''); const [panelOpen, setPanelOpen] = useState(false); const [muted, setMuted] = useState(false); const [showSettings, setShowSettings] = useState(false); const [showNotifications, setShowNotifications] = useState(false); const [notificationsEnabled, setNotificationsEnabled] = useState(true); const [districts, setDistricts] = useState(['Uelzen', 'Lüneburg', 'Harburg']); const [districtInput, setDistrictInput] = useState(''); const [districtNames, setDistrictNames] = useState<string[]>([]); const [pads, setPads] = useState<LandingPad[]>(defaultPads); const [selectedPad, setSelectedPad] = useState<LandingPad | null>(null); const [padDraft, setPadDraft] = useState<LandingPad | null>(null); const [mapMenu, setMapMenu] = useState<{ x: number; y: number; coords: [number, number] } | null>(null); const [persistenceStatus, setPersistenceStatus] = useState<'loading' | 'server' | 'saving' | 'error'>('loading'); const [saveError, setSaveError] = useState(''); const [profile] = useState(profileToken); const revision = useRef(0); const saved = useRef(''); const saving = useRef(false); const hydrating = useRef(true)
   const own = useOwnPosition()
   const centerOwn = useRef(false)
   const [notices, setNotices] = useState<Notice[]>([])
   const [readAt, setReadAt] = useState(0)
   const [notificationMessage, setNotificationMessage] = useState('')
+  const [trackHistory, setTrackHistory] = useState<Record<string, [number, number][]>>({})
   const previousFlights = useRef<Flight[] | null>(null)
   const notificationRegistration = useRef<ServiceWorkerRegistration | null>(null)
   const audioContext = useRef<AudioContext | null>(null)
@@ -121,6 +133,11 @@ function App() {
       if (permission !== 'granted') { setNotificationMessage('In-App-Meldungen aktiv. Systemmeldungen bitte in den Browser-Einstellungen erlauben.'); return }
       await navigator.serviceWorker.register('/notification-sw.js')
       notificationRegistration.current = await navigator.serviceWorker.ready
+      const periodicSync = (notificationRegistration.current as ServiceWorkerRegistration & { periodicSync?: { register: (tag: string, options: { minInterval: number }) => Promise<void> } }).periodicSync
+      if (periodicSync) {
+        await periodicSync.register('rthtrack-live', { minInterval: 5 * 60 * 1000 })
+        setNotificationMessage('Systemmeldungen und Hintergrundprüfung aktiviert. Der Browser entscheidet über die genauen Intervalle.')
+      } else setNotificationMessage('Systemmeldungen aktiviert. Hintergrundprüfung wird von diesem Browser nicht unterstützt.')
       setNotificationMessage('Systemmeldungen aktiviert, solange die App geöffnet ist.')
       if (!audioContext.current) audioContext.current = new AudioContext()
       await audioContext.current.resume()
@@ -216,8 +233,9 @@ function App() {
     })()
   }, [currentSettings, persistenceStatus, profile])
 
-  useEffect(() => { let active = true; const controller = new AbortController(); const load = async () => { try { const next = await fetchLiveFlights(controller.signal); if (active) { processFlightEvents(next); setFlights(next); setDataMode('live'); setSelectedFlight((current) => next.find((item) => item.id === current?.id) || null) } } catch { if (active) { previousFlights.current = null; setFlights([]); setSelectedFlight(null); setDataMode('offline') } } }; load(); const timer = window.setInterval(load, 30000); return () => { active = false; controller.abort(); window.clearInterval(timer) } }, [])
+  useEffect(() => { let active = true; const controller = new AbortController(); const load = async () => { try { const next = await fetchLiveFlights(controller.signal); if (active) { processFlightEvents(next); setTrackHistory((current) => { const updated = { ...current }; next.forEach((flight) => { const previous = updated[flight.id] || (flight.previousCoords ? [flight.previousCoords] : []); const last = previous[previous.length - 1]; if (!last || distanceKm(last, flight.coords) > 0.01) updated[flight.id] = [...previous, flight.coords].slice(-60) }); Object.keys(updated).filter((id) => !next.some((flight) => flight.id === id)).forEach((id) => delete updated[id]); return updated }); setFlights(next); setDataMode('live'); setSelectedFlight((current) => next.find((item) => item.id === current?.id) || null) } } catch { if (active) { previousFlights.current = null; setFlights([]); setSelectedFlight(null); setDataMode('offline') } } }; load(); const timer = window.setInterval(load, 30000); return () => { active = false; controller.abort(); window.clearInterval(timer) } }, [])
   useEffect(() => { if (!mapRef.current || leafletMap.current) return; const map = L.map(mapRef.current, { zoomControl: false, attributionControl: false, minZoom: 3, maxZoom: 18, tapHold: false, maxBounds: germanyBounds, maxBoundsViscosity: 1, worldCopyJump: false, bounceAtZoomLimits: false }).setView([51.1, 10.4], 7); map.createPane('districts'); const pane = map.getPane('districts'); if (pane) pane.style.zIndex = '350'; L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(import.meta.env.VITE_CARTO_API_KEY || '')}`, { maxZoom: 20, noWrap: true }).addTo(map); L.control.attribution({ prefix: false, position: 'bottomright' }).addAttribution('© OpenStreetMap · CARTO · <a href="https://adsb.fi" target="_blank" rel="noreferrer">adsb.fi</a> · <a href="https://www.adsb.lol" target="_blank" rel="noreferrer">ADSB.lol</a>').addTo(map); leafletMap.current = map; districtLayerRef.current = L.layerGroup().addTo(map); layersRef.current = L.layerGroup().addTo(map); const constrain = () => { map.panInsideBounds(germanyBounds, { animate: false }) }; constrain(); map.on('resize', constrain); return () => { map.off('resize', constrain); map.remove(); leafletMap.current = null } }, [])
+  useEffect(() => { if (leafletMap.current && !trackLayerRef.current) trackLayerRef.current = L.layerGroup().addTo(leafletMap.current) }, [])
   useEffect(() => { leafletMap.current?.fitBounds(germanyBounds, { padding: [24, 24], maxZoom: 7 }) }, [])
   useEffect(() => {
     const map = leafletMap.current; if (!map) return
@@ -233,6 +251,17 @@ function App() {
     container.addEventListener('pointerdown', down); container.addEventListener('pointermove', move); container.addEventListener('pointerup', cancel); container.addEventListener('pointercancel', cancel); container.addEventListener('click', click, true)
     return () => { cancel(); map.off('contextmenu', menu); map.off('movestart', cancel); container.removeEventListener('pointerdown', down); container.removeEventListener('pointermove', move); container.removeEventListener('pointerup', cancel); container.removeEventListener('pointercancel', cancel); container.removeEventListener('click', click, true) }
   }, [])
+  useEffect(() => {
+    const group = trackLayerRef.current
+    if (!group) return
+    group.clearLayers()
+    if (showFlights) filteredFlights.forEach((flight) => {
+      const history = trackHistory[flight.id]
+      const derivedHeading = flight.heading ?? (history && history.length > 1 ? bearingDegrees(history[history.length - 2], history[history.length - 1]) : 0)
+      if (history?.length && history.length > 1) L.polyline(history, { color: flight.accent, weight: 2, opacity: 0.72, dashArray: '5 6', interactive: false }).addTo(group)
+      L.marker(flight.coords, { pane: 'tooltipPane', zIndexOffset: 1200, icon: L.divIcon({ className: 'heading-overlay', html: `<div class="heading-label"><span style="transform:rotate(${derivedHeading}deg)">▲</span></div>`, iconSize: [24, 24], iconAnchor: [12, 12] }), interactive: false }).addTo(group)
+    })
+  }, [filteredFlights, showFlights, trackHistory])
   useEffect(() => {
     const map = leafletMap.current
     const districtLayer = districtLayerRef.current
