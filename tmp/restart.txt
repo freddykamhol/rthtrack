@@ -1,1 +1,1 @@
-RTHtrack own position and notification deployment 2026-10-08 revision 3
+RTHtrack persistence and live feed fix 2026-10-09

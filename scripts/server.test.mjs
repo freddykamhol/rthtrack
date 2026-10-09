@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -57,4 +57,45 @@ test('feed rejects outages, deduplicates fresh positions, and caches requests', 
 test('source entry never depends on published bundles', async()=>{
   const source=await readFile('client/index.html','utf8')
   assert.ok(source.includes('/src/main.tsx')); assert.ok(!source.includes('/assets/'))
+})
+
+test('orphaned feed lock and corrupt disk cache cannot stop flights; failed provider falls back', async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'rthtrack-orphan-test-'))
+  await writeFile(path.join(dataDir, 'feed.lock'), '')
+  await writeFile(path.join(dataDir, 'feed.json'), '{corrupt')
+  const calls = []
+  const server = createApp({ dataDir, fetchFeed: async (url) => {
+    calls.push(url)
+    if (url.includes('adsb.fi')) throw new Error('provider unavailable')
+    return { ac: [{ hex: 'rescue', flight: 'CHX30', lat: 53, lon: 10, seen_pos: url.includes('/lat/53/') ? 1 : 80 }] }
+  } })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`
+    const responses = await Promise.all([fetch(base + '/adsb-live'), fetch(base + '/adsb-live')])
+    assert.equal(responses[0].status, 200)
+    const body = await responses[0].json()
+    assert.equal(body.ac.length, 1)
+    assert.equal(body.ac[0].seen_pos, 1)
+    assert.equal(body.source, 'adsb.lol')
+    assert.equal(body.partial, false)
+    assert.equal(calls.length, 4)
+    assert.equal((await fetch(base + '/adsb-live')).status, 200)
+    assert.equal(calls.length, 4)
+  } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)) }
+})
+
+test('one failed region still returns fresh aircraft with partial status', async () => {
+  const server = createApp({ fetchFeed: async (url) => {
+    if (url.includes('/lat/49/')) throw new Error('south unavailable')
+    return { ac: [{ hex: 'fresh', lat: 53, lon: 10, seen_pos: 0 }, { hex: 'unknown-age', lat: 53, lon: 10 }] }
+  } })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/adsb-live`)
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    assert.equal(body.partial, true)
+    assert.deepEqual(body.ac.map((ac) => ac.hex), ['fresh'])
+  } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)) }
 })

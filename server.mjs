@@ -16,15 +16,47 @@ function validate(s) {
 }
 function upstream(url) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { Accept: 'application/json', 'User-Agent': 'RTHtrack/1.0' } }, (res) => {
+    const timer = setTimeout(() => req.destroy(new Error('Feed timeout')), 6000)
+    const req = https.get(url, { headers: { Accept: 'application/json', 'User-Agent': 'RTHtrack/1.0 (https://rthtrack.karamazmymedia.de)' } }, (res) => {
       let body = ''; res.setEncoding('utf8')
       res.on('data', (chunk) => { body += chunk; if (body.length > 12000000) req.destroy(new Error('Feed too large')) })
       res.on('end', () => { try { const data = JSON.parse(body); if (res.statusCode !== 200 || !Array.isArray(data.ac)) throw new Error('Invalid upstream'); resolve(data) } catch (e) { reject(e) } })
       res.on('error', reject)
-    }); req.setTimeout(12000, () => req.destroy(new Error('Feed timeout'))); req.on('error', reject)
+    }); req.on('close', () => clearTimeout(timer)); req.on('error', reject)
   })
 }
 export function createApp({ dataDir = process.env.RTHTRACK_DATA_DIR || path.join(root, '..', 'rthtrack-data'), fetchFeed = upstream } = {}) {
+  // Live data must not depend on persistent files or locks left by a crashed worker.
+  let cachedFeed = null
+  let pendingFeed = null
+  async function regionFeed(latitude) {
+    for (const [source, base] of [['adsb.fi', 'https://opendata.adsb.fi/api/v3'], ['adsb.lol', 'https://api.adsb.lol/v2']]) {
+      try {
+        const data = await fetchFeed(`${base}/lat/${latitude}/lon/10/dist/250`)
+        if (Array.isArray(data?.ac)) return { ...data, source }
+      } catch { /* Try the independent provider. */ }
+    }
+    return null
+  }
+  async function liveFeed() {
+    if (cachedFeed && Date.now() - cachedFeed.fetchedAt < 25000) return cachedFeed
+    if (pendingFeed) return pendingFeed
+    pendingFeed = (async () => {
+      const north = await regionFeed(53)
+      await sleep(1100)
+      const south = await regionFeed(49)
+      if (!north && !south) return null
+      const unique = new Map()
+      for (const ac of [...(north?.ac || []), ...(south?.ac || [])]) {
+        if (!ac.hex || !Number.isFinite(ac.lat) || !Number.isFinite(ac.lon) || !Number.isFinite(ac.seen_pos) || ac.seen_pos > 120) continue
+        const before = unique.get(ac.hex)
+        if (!before || ac.seen_pos < before.seen_pos) unique.set(ac.hex, ac)
+      }
+      cachedFeed = { ac: [...unique.values()], fetchedAt: Date.now(), partial: !north || !south, source: [...new Set([north?.source, south?.source].filter(Boolean))].join(', ') }
+      return cachedFeed
+    })()
+    try { return await pendingFeed } finally { pendingFeed = null }
+  }
   const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(body)) }
   async function locked(name, fn) {
     await mkdir(dataDir, { recursive: true, mode: 0o700 })
@@ -41,21 +73,10 @@ export function createApp({ dataDir = process.env.RTHTRACK_DATA_DIR || path.join
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost')
-      if (url.pathname === '/api/health') { await mkdir(dataDir, { recursive: true, mode: 0o700 }); return json(res, 200, { ok: true, service: 'rthtrack-node', version: '2026-10-08-source-fix' }) }
+      if (url.pathname === '/api/health') { await mkdir(dataDir, { recursive: true, mode: 0o700 }); return json(res, 200, { ok: true, service: 'rthtrack-node', version: '2026-10-09-persistence-feed-fix' }) }
       if (url.pathname === '/adsb-live' && req.method === 'GET') {
-        const feed = await locked('feed', async () => {
-          const cached = await load('feed.json', null)
-          if (cached && Date.now() - cached.fetchedAt < 25000) return cached
-          const north = await fetchFeed('https://opendata.adsb.fi/api/v3/lat/53/lon/10/dist/250').catch(() => null)
-          await sleep(1100)
-          const south = await fetchFeed('https://opendata.adsb.fi/api/v3/lat/49/lon/10/dist/250').catch(() => null)
-          if (!north && !south) return null
-          const unique = new Map()
-          for (const ac of [...(north?.ac || []), ...(south?.ac || [])]) if (ac.hex && Number.isFinite(ac.lat) && Number.isFinite(ac.lon) && (ac.seen_pos ?? 9999) <= 120) unique.set(ac.hex, ac)
-          const next = { ac: [...unique.values()], fetchedAt: Date.now(), partial: !north || !south, source: 'adsb.fi' }
-          await save('feed.json', next); return next
-        })
-        return json(res, feed ? 200 : 502, feed || { error: 'ADSB.fi momentan nicht erreichbar' })
+        const feed = await liveFeed()
+        return json(res, feed ? 200 : 502, feed || { error: 'ADS-B-Dienste momentan nicht erreichbar' })
       }
       if (url.pathname === '/api/rthtrack/settings') {
         const token = req.headers['x-rthtrack-profile'] || ''

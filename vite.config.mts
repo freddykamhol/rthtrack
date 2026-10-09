@@ -9,10 +9,10 @@ export default defineConfig({
   server: {
     proxy: {
       '/adsb-live': {
-        target: 'https://opendata.adsb.fi',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
-        rewrite: () => '/api/v3/lat/53.18/lon/10.38/dist/250',
       },
+      '/api': { target: 'http://127.0.0.1:3000', changeOrigin: true },
     },
   },
 })

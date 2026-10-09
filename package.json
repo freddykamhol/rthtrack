@@ -5,8 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node app.js",
-    "test": "node --test scripts/server.test.mjs scripts/flight-events.test.mjs",
+    "test": "node --test scripts/server.test.mjs scripts/flight-events.test.mjs scripts/profile.test.mjs",
     "dev": "vite",
+    "test:browser": "playwright test",
     "build": "tsc -b && node scripts/build.mjs",
     "lint": "oxlint src scripts server.mjs app.js vite.config.mts",
     "preview": "vite preview"
@@ -19,6 +20,7 @@
     "suncalc": "^2.1.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
