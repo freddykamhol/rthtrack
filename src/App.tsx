@@ -257,10 +257,18 @@ function App() {
     group.clearLayers()
     if (showFlights) filteredFlights.forEach((flight) => {
       const history = trackHistory[flight.id]
-      const derivedHeading = flight.heading ?? (history && history.length > 1 ? bearingDegrees(history[history.length - 2], history[history.length - 1]) : 0)
+      const derivedHeading = flight.heading ?? (history && history.length > 1 ? bearingDegrees(history[history.length - 2], history[history.length - 1]) : null)
       if (history?.length && history.length > 1) L.polyline(history, { color: flight.accent, weight: 2, opacity: 0.72, dashArray: '5 6', interactive: false }).addTo(group)
-      const arrowOffset = flight.type === 'HELI' ? 8 : 14
-      L.marker(flight.coords, { pane: 'tooltipPane', zIndexOffset: 1200, icon: L.divIcon({ className: 'heading-overlay', html: `<div class="heading-label ${flight.type === 'HELI' ? 'small' : ''}"><span style="transform:rotate(${derivedHeading - 90}deg) translateX(${arrowOffset}px)"></span></div>`, iconSize: [90, 90], iconAnchor: [45, 45] }), interactive: false }).addTo(group)
+      if (derivedHeading === null) return
+      const small = flight.type === 'HELI'
+      // The tip, rather than a CSS box corner, lies on the heading ray from the square's centre.
+      const radius = small ? 11 : 24
+      const arm = (small ? 5 : 12.5) / Math.sqrt(2)
+      const centerX = small ? 45 : 45.5
+      const centerY = small ? 45 : 44.5
+      const tipY = centerY - radius
+      const path = `M ${centerX - arm} ${tipY + arm} L ${centerX} ${tipY} L ${centerX + arm} ${tipY + arm}`
+      L.marker(flight.coords, { pane: 'tooltipPane', zIndexOffset: 1200, icon: L.divIcon({ className: 'heading-overlay', html: `<svg class="heading-chevron" width="90" height="90" viewBox="0 0 90 90" aria-hidden="true"><path d="${path}" transform="rotate(${derivedHeading} ${centerX} ${centerY})" stroke-width="${small ? 2 : 3}" /></svg>`, iconSize: [90, 90], iconAnchor: [45, 45] }), interactive: false }).addTo(group)
     })
   }, [filteredFlights, showFlights, trackHistory])
   useEffect(() => {

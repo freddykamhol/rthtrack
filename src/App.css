@@ -1,8 +1,7 @@
 :root { --glass: rgba(16, 27, 24, .82); --line: rgba(255,255,255,.13); --green: #8ee8b5; }
 .heading-overlay { pointer-events:none!important; z-index:2000!important; }
-.heading-label { position:absolute; left:45px; top:45px; width:1px; height:1px; pointer-events:none; }
-.heading-label span { position:absolute; left:13px; top:0; display:block; width:16px; height:16px; border-left:3px solid #ff1f14; border-top:3px solid #ff1f14; border-radius:1px; filter:drop-shadow(0 1px 2px #000); transform-origin:-13px 0; }
-.heading-label.small span { left:8px; top:0; width:10px; height:10px; border-width:2px; transform-origin:-8px 0; }
+.heading-chevron { display:block; overflow:visible; pointer-events:none; }
+.heading-chevron path { fill:none; stroke:#ff0000; stroke-linecap:square; stroke-linejoin:miter; }
 .map-app .leaflet-control-attribution { display:block!important; }
 .pad-manage { display:block; width:100%; text-align:left; color:#eaffef; background:#ffffff08; border:1px solid #ffffff22; border-radius:8px; margin-top:8px; padding:10px; }.pad-manage small { display:block; color:#9bb0a4; margin-top:4px; }.pad-coordinates { display:grid; grid-template-columns:1fr 1fr; gap:10px; }.sync-error { position:fixed; z-index:29; bottom:120px; left:50%; transform:translateX(-50%); width:min(450px,90vw); background:#542a21; color:white; border:1px solid #ff9b86; padding:12px; border-radius:12px; font-size:12px; }.sync-error button { color:white; background:transparent; border:0; text-decoration:underline; }.save-settings:disabled { opacity:.45; cursor:not-allowed; }.field-label select option { background:#13271f; }
 .map-app { height: 100vh; min-height: 580px; position: relative; overflow: hidden; background: #17221e; }.leaflet-map { position: absolute; inset: 0; z-index: 0; background: #17221e; }.leaflet-tile { filter: saturate(.82) brightness(.82); }.leaflet-control-attribution { background: rgba(11,21,18,.55)!important; color:#9bafa5!important; padding:4px 7px!important; font:9px 'DM Mono',monospace!important; }.leaflet-control-attribution a { color:#b6d9c4!important; }

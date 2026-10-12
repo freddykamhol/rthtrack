@@ -1,5 +1,24 @@
 import { test, expect } from '@playwright/test'
 
+test('heading chevron tip follows the ray from the square centre', async ({ page }) => {
+  for (const heading of [0, 45, 180, 270]) {
+    await page.route('**/adsb-live', (route) => route.fulfill({ json: { ac: [{ hex: 'heading-test', flight: 'CHX30', lat: 51, lon: 10, track: heading, t: 'EC35', alt_baro: 1500 }] } }))
+    await page.goto('/')
+    await expect(page.locator('.heading-chevron path')).toHaveCount(1)
+    const geometry = await page.evaluate(() => {
+      const path = document.querySelector('.heading-chevron path')
+      const square = document.querySelector('.radar-square').getBoundingClientRect()
+      const numbers = path.getAttribute('d').match(/-?\d+(?:\.\d+)?/g).map(Number)
+      const point = new DOMPoint(numbers[2], numbers[3]).matrixTransform(path.getScreenCTM())
+      return { x: point.x - (square.left + square.width / 2), y: point.y - (square.top + square.height / 2) }
+    })
+    const radians = heading * Math.PI / 180
+    expect(geometry.x).toBeCloseTo(24 * Math.sin(radians), 1)
+    expect(geometry.y).toBeCloseTo(-24 * Math.cos(radians), 1)
+    await page.unroute('**/adsb-live')
+  }
+})
+
 test.beforeEach(async ({ page }) => {
   await page.route('https://**/*', (route) => route.abort())
 })
