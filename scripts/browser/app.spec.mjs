@@ -13,8 +13,8 @@ test('heading chevron tip follows the ray from the square centre', async ({ page
       return { x: point.x - (square.left + square.width / 2), y: point.y - (square.top + square.height / 2) }
     })
     const radians = heading * Math.PI / 180
-    expect(geometry.x).toBeCloseTo(24 * Math.sin(radians), 1)
-    expect(geometry.y).toBeCloseTo(-24 * Math.cos(radians), 1)
+    expect(geometry.x).toBeCloseTo(27 * Math.sin(radians), 1)
+    expect(geometry.y).toBeCloseTo(-27 * Math.cos(radians), 1)
     await page.unroute('**/adsb-live')
   }
 })

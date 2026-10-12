@@ -262,7 +262,7 @@ function App() {
       if (derivedHeading === null) return
       const small = flight.type === 'HELI'
       // The tip, rather than a CSS box corner, lies on the heading ray from the square's centre.
-      const radius = small ? 11 : 24
+      const radius = small ? 13 : 27
       const arm = (small ? 5 : 12.5) / Math.sqrt(2)
       const centerX = small ? 45 : 45.5
       const centerY = small ? 45 : 44.5
