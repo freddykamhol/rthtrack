@@ -259,7 +259,7 @@ function App() {
       const history = trackHistory[flight.id]
       const derivedHeading = flight.heading ?? (history && history.length > 1 ? bearingDegrees(history[history.length - 2], history[history.length - 1]) : 0)
       if (history?.length && history.length > 1) L.polyline(history, { color: flight.accent, weight: 2, opacity: 0.72, dashArray: '5 6', interactive: false }).addTo(group)
-      L.marker(flight.coords, { pane: 'tooltipPane', zIndexOffset: 1200, icon: L.divIcon({ className: 'heading-overlay', html: `<div class="heading-label"><span style="transform:rotate(${derivedHeading}deg)">▲</span></div>`, iconSize: [24, 24], iconAnchor: [12, 12] }), interactive: false }).addTo(group)
+      L.marker(flight.coords, { pane: 'tooltipPane', zIndexOffset: 1200, icon: L.divIcon({ className: 'heading-overlay', html: `<div class="heading-label"><span style="transform:rotate(${derivedHeading - 90}deg) translateX(15px)"></span></div>`, iconSize: [70, 70], iconAnchor: [35, 35] }), interactive: false }).addTo(group)
     })
   }, [filteredFlights, showFlights, trackHistory])
   useEffect(() => {
